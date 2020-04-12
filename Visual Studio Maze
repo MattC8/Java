@@ -1,0 +1,1624 @@
+Public Class gameplay
+    'maze generation
+    Dim Random As Integer                               'to be used for random number generation for pathfinding code
+    Dim cellcount As Integer = 0                        'used to check if all the cells in the 10*10 grid have been visited
+    Dim mazewidth As Integer = 10                       'value of mthe mazewidth. calculation code allows for increases in size, but user interface is more challenging
+    Dim mazeheight As Integer = 10
+    Dim wallactive(200) As Integer                      'an array for each wall to check if active (0) or inactive (1)
+    Dim initialmaze2(200) As Integer                    'an array used as a duplicate of the wallactive maze before affected by changes caused by difficulty (this one used for proximity code)
+    Dim initialmaze(200) As Integer                     'same as previous, though used for randomly changing the walls
+    Dim mazearea As Integer = mazeheight * mazewidth       'calculate area of maze, equal to cellcount and numerous other values, including range for arrays
+    Dim beento(mazearea) As Integer                     'stating in an array if any given cell has been visited while pathfinding
+    Dim randomcellarea As Integer                       'choosing a random cell within the area of the maze, used for when pathfinding comes into a dead end
+    Dim cells(mazearea + mazewidth) As Integer          'used for checking if a cell is capable of being visited
+    Dim celltoleft(mazearea) As Integer                 'used to determine the numerical value of the cell to the existing cells left
+    Dim celltoright(mazearea) As Integer                'same for right
+    Dim celltotop(mazearea) As Integer                  'same for top
+    Dim celltobottom(mazearea + mazewidth) As Integer   'same for bottom
+    Dim wallbreaker(2, mazearea) As Integer             'the values of the previous and current cells with respect to the cellcount, a 2 row matrix for a cell being first or second
+    Dim options(mazearea + mazewidth) As Integer        'the number of options a cell has to move to, used for pathfinding, ie, a cell to an edge has three, then when cell next to it is moved into has 2, and when left has 1.
+
+    'controls
+    Dim mouseXpos As Single                             'position of the mouse in X coordinates
+    Dim mouseYpos As Single                             'position of the mouse in Y coordinates
+    Dim playerXpos As Single = 90                       'position of mouse controlled player X coordinates
+    Dim playerYpos As Single = 70                       'position of mouse controlled player Y coordinates
+    Dim speedmouse As Integer = 2                       'speed of the mouse controlled player
+    Dim speedkeys As Integer = 10                       'speed of key controlled player (note, call rate impacts visible speed, so mouse speed uis similar to key speed)
+
+    'barriers
+    Dim ObjectXrange(2, 200) As Single                  'an array for the X range of all walls. (0) = wall with smaller X value (1) is one with larger X value
+    Dim ObjectYrange(2, 200) As Single                  'same for Y range
+    Dim ObjectX(200) As Single                          'used for proximity code, X coordinates of the center of each wall
+    Dim ObjectY(200) As Single                          'same as previous but for Y
+    Dim instantdirectionY As Single = 1                 'direction of the mouse before a collision, so solve teleporting through wall issue, Y
+    Dim instantdirectionX As Single = 1                 'same as prevuious but for X
+    Dim collision As Boolean                            'check if a collision has occurred
+
+    'scores/time
+    Dim start1 As Boolean = False                       'allows for player movemenmt to start
+    Dim timer As Single                                 'used for code that occurs in regular intervals, ie time and proximity/randomness
+    Dim collisiondeduction As Integer = 5               'points deducted after a collision
+    Public Shared time As Integer                       'the general time for how long the players have been playing
+    Dim time1 As Integer                                'time taken by player 1
+    Dim time2 As Integer                                'time taken by player 2
+    Dim player1finish As Boolean                        'states if player 1 has finished the current maze
+    Dim player2finish As Boolean                        'states if player 2 has finished
+    Dim player1score(5) As Single                       'scores for each level (0 = level 1 ... 3 = level 4, 5 equals total(scores for each level added together)
+    Dim player2score(5) As Single
+    Dim complete As Boolean                             'states if both players have completed all mazes
+    Dim activatefinish As Boolean                       'for one player, allows to progress
+
+    Dim randomprobability1 As Integer
+    Dim randomprobability2 As Integer
+    Dim naturalprobability As Integer = 120             'chance or wall appearing vs disapearing
+    Dim difficulty As Integer                           'used for creating levels, with if statements for each difficulty
+    Dim startlocationX As Integer = 80                  'locatyion each players start (x)
+    Dim startlocationY As Integer = 40                  'same for Y
+
+    Private Sub Form1_MouseDoubleClick(sender As Object, e As MouseEventArgs) Handles MyBase.MouseDoubleClick                  'to show random maze generation for level 1
+        startplay()
+    End Sub
+    Private Sub Timer1_Tick(sender As Object, e As EventArgs) Handles Timer1.Tick                                           'handles actions that occur at regular intervals
+        If (collision = True) Then
+            My.Computer.Audio.Play(My.Resources.Interference, AudioPlayMode.Background)
+            If (timer Mod 3 = 0) Then
+                collision = False
+                My.Computer.Audio.Play(My.Resources.Point_of_Clash, AudioPlayMode.BackgroundLoop)
+            End If
+        End If
+        Label91.Text = "time : " & time                                                                                       'labels for visible score and time
+        Label92.Text = "p1 score: " & player1score(difficulty)
+        Label93.Text = "p2 score: " & player2score(difficulty)
+        Label94.Text = "p1 total score: " & player1score(5)
+        Label95.Text = "p2 total score: " & player2score(5)
+        If (player1finish = True AndAlso player2finish = True Or activatefinish = True) Then
+            If (difficulty < 5 AndAlso complete = False) Then
+                difficulty += 1                                                                                                 'level control
+            End If
+            startplay()
+            activatefinish = False
+        End If
+        If (difficulty >= 5 AndAlso complete = False) Then                                                                                  'recognition of all levels being completed
+            finished()
+        End If
+        timer += 1
+        If (timer Mod 10 = 0) Then
+            time += 1
+            If (player1finish = False) Then                                                                                         'tracks individual time of each player
+                time1 += 1
+            End If
+            If (player2finish = False) Then
+                time2 += 2
+            End If
+        End If
+        player1totalscore()
+        player2totalscore()
+        If (difficulty = 2 Or difficulty = 4) Then                                                                                          'proximity code linked to values of difficulty
+            If (timer Mod 1 = 0) Then
+                wallcoord()
+                wallbreakerhor()
+                wallbreakervert()
+            End If
+        End If
+        If (difficulty = 3 Or difficulty = 4) Then
+            If (timer Mod 1 = 0) Then
+                randomprobability1 = (200 * Rnd())                                                                                                      'random walls linked to difficulty
+                randomprobability2 = (200 * Rnd())
+                If (randomprobability2 < naturalprobability) Then
+                    initialmaze2(randomprobability1) = 0
+                Else
+                    initialmaze2(randomprobability1) = 1
+                End If
+                For h = 0 To 200
+                    If (difficulty = 3) Then
+                        wallactive(h) = initialmaze2(h)
+                    Else
+                        initialmaze(h) = initialmaze2(h)                                                                                        'if both proximity and random walls, initial maze 2 is used
+                    End If
+                Next
+                wallbreakerhor()
+                wallbreakervert()
+            End If
+        End If
+    End Sub
+    Private Sub Form1_Load(sender As Object, e As EventArgs) Handles MyBase.Load
+        complete = False
+        Me.PictureBox1.SizeMode = PictureBoxSizeMode.StretchImage
+        Me.PictureBox2.SizeMode = PictureBoxSizeMode.StretchImage
+        imagegenp1()                                                                    'sets images of players
+        imagegenp2()
+        startplay()
+        difficulty = 1
+        For l = 0 To 5
+            player1score(l) = 10000                                                     'sets starting scores to max
+            player2score(l) = 10000
+        Next
+        Me.PictureBox3.Top = startlocationY
+        Me.PictureBox3.Left = startlocationX
+        Me.PictureBox1.Top = startlocationY
+        Me.PictureBox1.Left = startlocationX
+        If Start.mazetype = 1 Then                                                       'backgroung colour of maze
+            Me.BackColor = Color.SaddleBrown
+        End If
+        If (Start.mazetype = 2) Then
+            Me.BackColor = Color.DimGray
+        End If
+        If (Start.mazetype = 3) Then
+            Me.BackColor = Color.ForestGreen
+        End If
+        If (Start.mazetype = 4) Then
+            Me.BackColor = Color.Black
+        End If
+        My.Computer.Audio.Play(My.Resources.Point_of_Clash, AudioPlayMode.BackgroundLoop)
+    End Sub
+    Function p1pointstime()
+        Dim scoretime = (player1score(5) * 200) / time1
+        Return scoretime
+    End Function
+    Function p2pointstime()
+        Dim score2time = (player2score(5) * 200) / time2
+        Return score2time
+    End Function
+    Function player1totalscore()
+        player1score(5) = player1score(1) + player1score(2) + player1score(3) + player1score(4)
+        Return player1score(5)
+    End Function
+    Function player2totalscore()
+        player2score(5) = player2score(1) + player2score(2) + player2score(3) + player2score(4)
+        Return player2score(5)
+    End Function
+
+    'wasd keys
+    Private Sub Form1_KeyDown(ByVal sender As Object, ByVal e As System.Windows.Forms.KeyEventArgs) Handles Me.KeyDown
+        Dim direction As Integer
+        wallborders()
+        If (start1 = True) Then
+            Select Case e.KeyCode
+                Case Keys.A
+                    Me.PictureBox3.Left -= speedkeys                                                                                            'standard key movement
+                    direction = 4
+                Case Keys.D
+                    Me.PictureBox3.Left += speedkeys
+                    direction = 2
+                Case Keys.W
+                    Me.PictureBox3.Top -= speedkeys
+                    direction = 1
+                Case Keys.S
+                    Me.PictureBox3.Top += speedkeys
+                    direction = 3
+            End Select
+        End If
+        For s = 0 To 200
+            If ((Me.PictureBox3.Bottom - 10) > ObjectYrange(0, s) AndAlso (Me.PictureBox3.Top + 10) < ObjectYrange(1, s) AndAlso (Me.PictureBox3.Right) > ObjectXrange(0, s) AndAlso (Me.PictureBox3.Left) < ObjectXrange(1, s)) Then
+                wallactive(199) = 1                                                                                                                 'if within wall ranges
+                If (wallactive(s) = 0) Then
+                    collision = True
+                    If (player1finish = False) Then
+                        player1score(difficulty) -= collisiondeduction                                                                      'point deduction for collision
+                    End If
+                    If (direction = 3) Then
+                        Me.PictureBox3.Top -= 1.5 * speedkeys
+                    End If
+                    If (direction = 1) Then
+                        Me.PictureBox3.Top += 1.5 * speedkeys                                                                               'if a collision occurs with a vertical wall
+                    End If
+                    If (direction = 2) Then
+                        Me.PictureBox3.Left -= 1.5 * speedkeys
+                    End If
+                    If (direction = 4) Then
+                        Me.PictureBox3.Left += 1.5 * speedkeys
+                    End If
+                End If
+            End If
+            If (Me.PictureBox3.Bottom - 20) > 809 Or (Me.PictureBox3.Top + 40) < 66 Or (Me.PictureBox3.Right) > 846 Or ((Me.PictureBox3.Left) < 66) Then                'if outside maze area
+                collision = True
+                If (player1finish = False) Then
+                    player1score(difficulty) -= collisiondeduction                                                                                      'point deduction for collision
+                End If
+                If (direction = 3) Then
+                    Me.PictureBox3.Top -= 1.5 * speedkeys
+                End If
+                If (direction = 1) Then
+                    Me.PictureBox3.Top += 1.5 * speedkeys                                                                                       'if a collision occurs with a horizontal wall
+                End If
+                If (direction = 2) Then
+                    Me.PictureBox3.Left -= 1.5 * speedkeys
+                End If
+                If (direction = 4) Then
+                    Me.PictureBox3.Left += 1.5 * speedkeys
+                End If
+            End If
+        Next
+        If (PictureBox3.Bounds.IntersectsWith(PictureBox4.Bounds)) Then                                                                         'if collided with end of level object
+            player1finish = True
+        End If
+    End Sub
+
+    'similar movement mouse
+    Private Sub MouseControl(sender As Object, e As MouseEventArgs) Handles MyBase.MouseMove
+        wallborders()
+        Dim speed, similarcalculator As Long
+        Dim Xspeed, Yspeed, Zdist As Single
+        Dim contact As Boolean
+        Dim mouseXpos As Single = e.X
+        Dim mouseYpos As Single = e.Y
+        Dim walltype As Integer
+        speed = speedmouse
+        'mouse distance/speed
+        Zdist = (((mouseXpos - playerXpos) ^ 2) + ((mouseYpos - playerYpos) ^ 2)) ^ 0.5                                         'pythagoras to calulate distance mouse distance from player
+        similarcalculator = Zdist / speed
+        Xspeed = (mouseXpos - playerXpos) / similarcalculator                                                                       'logic from similar triangles
+        Yspeed = (mouseYpos - playerYpos) / similarcalculator
+        For q = 0 To 200
+            If ((Me.PictureBox1.Bottom) > ObjectYrange(0, q) AndAlso (Me.PictureBox1.Top) < ObjectYrange(1, q) AndAlso (Me.PictureBox1.Right) > ObjectXrange(0, q) AndAlso (Me.PictureBox1.Left) < ObjectXrange(1, q)) Then
+                wallactive(199) = 1
+                wallactive(90) = 0
+                If (wallactive(q) = 0) Then
+                    contact = True
+                    If (q < 100) Then                                                                               'collision detection for horizontal walls
+                        walltype = 1 'horizontal
+                    End If
+                    If (q > 100) Then
+                        walltype = 2 'vertical                                                                          'collision detection for vertical walls
+                    End If
+                End If
+            End If
+            If ((Me.PictureBox1.Bottom - 20) > 809 Or (Me.PictureBox1.Top + 40) < 66) Then                                  'if outside of maze area, collision occurs
+                walltype = 1
+                contact = True
+            End If
+            If ((Me.PictureBox1.Right) > 846 Or ((Me.PictureBox1.Left) < 66)) Then
+                walltype = 2
+                contact = True
+            End If
+        Next
+
+        If (start1 = True) Then
+            If (contact = False) Then
+                instantdirectionX = Xspeed                                                                                      'calculating the direction the player was travelling before tghe collision (to reverse for rebound)
+                instantdirectionY = Yspeed
+
+                playerXpos += Xspeed
+                playerYpos += Yspeed
+            Else
+                collision = True
+                If (walltype = 1) Then
+                    If (player2finish = False) Then
+                        player2score(difficulty) -= collisiondeduction                                                  'point deduction for collision
+                    End If
+                    If (instantdirectionY < 0) Then
+                        playerYpos += 1
+                    End If
+                    If (instantdirectionY > 0) Then                                                                                 'rebound code for VERTICAL MOVEMENT
+                        playerYpos -= 1
+                    End If
+                End If
+                If (walltype = 2) Then
+                    If (player2finish = False) Then
+                        player2score(difficulty) -= collisiondeduction                                                  'point deduction for collision
+                    End If
+                    If (instantdirectionX < 0) Then
+                        playerXpos += 1
+                    End If
+
+                    If (instantdirectionX > 0) Then                                                                                     'rebound code for horizontal movement
+                        playerXpos -= 1
+                    End If
+                End If
+            End If
+            contact = False
+        End If
+
+        If (PictureBox1.Bounds.IntersectsWith(PictureBox4.Bounds)) Then                                                     'if collided with end level object, finish
+            player2finish = True
+        End If
+
+        Me.PictureBox2.Left = playerXpos
+        Me.PictureBox2.Top = playerYpos                                                                                 'linking position to guide picturebox and visable picturebox to guide (guide allows for smoother controls
+        Me.PictureBox1.Left = Me.PictureBox2.Left - 30
+        Me.PictureBox1.Top = Me.PictureBox2.Top - 30
+    End Sub
+    Sub finished()
+        Dim myform As startscreen
+        If (myform Is Nothing) Then
+            myform = startscreen
+        End If
+        myform.Show()
+        Start.player1finalscore = p1pointstime()
+        Start.player2finalscore = p2pointstime()            'add scores of current players to score array
+        Me.Hide()
+        complete = True
+        startscreen.backtostart()
+        If (player1score(5) > player2score(5)) Then
+            MsgBox("Congratulations " & Start.p1name & " You Won!!!!!, with " & Start.player1finalscore & " points, with A time Of " & time1 & " seconds")
+        ElseIf (player2score(5) > player1score(5)) Then
+            MsgBox("Congratulations " & Start.p2name & " You Won!!!!!, with " & Start.player2finalscore & " points, with A time Of " & time2 & " seconds")                                  'congratulatory messages for winner
+        End If
+    End Sub
+    Sub imagegenp1()                'set images for player 1
+        If (Start.imageP1 = 1) Then
+            PictureBox1.Image = My.Resources.Jareth
+        End If
+        If (Start.imageP1 = 2) Then
+            PictureBox1.Image = My.Resources.sarah_williams
+        End If
+        If (Start.imageP1 = 3) Then
+            PictureBox1.Image = My.Resources.Ludo
+        End If
+        If (Start.imageP1 = 4) Then
+            PictureBox1.Image = My.Resources.hoggle
+        End If
+    End Sub
+    Sub imagegenp2()                'set images for player 2
+        If (Start.imageP2 = 1) Then
+            PictureBox3.Image = My.Resources.Jareth
+        End If
+        If (Start.imageP2 = 2) Then
+            PictureBox3.Image = My.Resources.sarah_williams
+        End If
+        If (Start.imageP2 = 3) Then
+            PictureBox3.Image = My.Resources.Ludo
+        End If
+        If (Start.imageP2 = 4) Then
+            PictureBox3.Image = My.Resources.hoggle
+        End If
+    End Sub
+    'coordinates for each wall, mathematically calculated by using regular spacing, placed into an array that corresponds to each wall, also calculating distance of each wall from both players
+    Private Sub wallcoord()
+        wallbreakervert()
+        wallbreakerhor()
+        Dim Objectdistmouse(200) As Single
+        Dim objectdistkeys(200) As Single
+        Dim cellwirange(200) As Single
+        'h  = horizontal walls, v = vertical walls, vert = vertical travel, h = horizontal travel (for rows)
+        'horizontal walls coordinates
+        For collumnhx = 0 To 90 Step 10
+            For hx = 1 To 10
+                ObjectX(collumnhx + hx) = 46 + (hx - 1) * 80 + 50
+            Next
+        Next
+        For hy = 1 To 10
+            For rowhy = 0 To 90 Step 10
+                ObjectY(rowhy + hy) = 89 + rowhy * 8 + 10                                                                                           'calculating coordinates of each wall
+            Next
+        Next
+
+        'vertical walls coordinates
+        For collumnvx = 100 To 190 Step 10
+            For vx = 1 To 9
+                ObjectX(collumnvx + vx) = 126 + (vx - 1) * 80 + 10
+            Next
+        Next
+        For vy = 1 To 9
+            For rowvy = 100 To 190 Step 10
+                ObjectY(rowvy + vy) = 9 + (rowvy - 100) * 8 + 50
+            Next
+        Next
+        For r = 1 To 200
+            Objectdistmouse(r) = ((ObjectX(r) - playerXpos) ^ 2 + (ObjectY(r) - playerYpos) ^ 2) ^ 0.5
+            objectdistkeys(r) = (((ObjectX(r) - (Me.PictureBox3.Left - 20)) ^ 2) + ((ObjectY(r) - (Me.PictureBox3.Top + 20)) ^ 2)) ^ 0.5                                        'calculating distance from each player
+            If (Objectdistmouse(r) < 200) Then
+                wallactive(r) = initialmaze2(r)
+            End If
+            If (objectdistkeys(r) < 200) Then
+                wallactive(r) = initialmaze2(r)
+            End If
+            If (objectdistkeys(r) > 200 AndAlso Objectdistmouse(r) > 200) Then
+                wallactive(r) = 1
+            End If
+
+        Next
+    End Sub
+    'calculates the ranges between walls, also using regular spacing, stored into a 2 row matrix array for the larger X value and smaller X value walls
+    Private Sub wallborders()
+        Dim Objectdistmouse(200) As Single
+        Dim objectdistkeys(200) As Single
+        'h  = horizontal walls, v = vertical walls, vert = vertical travel, h = horizontal travel (for rows)
+        'horizontal walls range (for collisions)
+        For collumnhx = 0 To 90 Step 10
+            For hx = 1 To 10
+                ObjectXrange(0, collumnhx + hx) = 46 + (hx - 1) * 80
+                ObjectXrange(1, collumnhx + hx) = 46 + (hx - 1) * 80 + 100
+            Next
+        Next
+        For hy = 1 To 10
+            For rowhy = 0 To 90 Step 10
+                ObjectYrange(0, rowhy + hy) = 89 + rowhy * 8
+                ObjectYrange(1, rowhy + hy) = 89 + rowhy * 8 + 20
+            Next
+        Next
+
+        'vertical walls coordinates
+        For collumnvx = 100 To 190 Step 10
+            For vx = 1 To 9
+                ObjectXrange(0, collumnvx + vx) = 126 + (vx - 1) * 80
+                ObjectXrange(1, collumnvx + vx) = 126 + (vx - 1) * 80 + 10
+            Next
+        Next
+        For vy = 1 To 9
+            For rowvy = 100 To 190 Step 10
+                ObjectYrange(0, rowvy + vy) = 9 + (rowvy - 100) * 8
+                ObjectYrange(1, rowvy + vy) = 9 + (rowvy - 100) * 8 + 100
+            Next
+        Next
+    End Sub
+
+    'generation and initialisation of maze and default values before starting play and between levels
+    Sub startplay()
+        Dim time As Integer = 0
+        Dim timer As Single = 0
+        start1 = True
+        time = 0
+        Me.PictureBox2.Left = startlocationX + 30
+        Me.PictureBox2.Top = startlocationY + 30                                                                            'setting player pictureboxes to start positions
+        Me.PictureBox1.Left = Me.PictureBox2.Left - 30
+        Me.PictureBox1.Top = Me.PictureBox2.Top - 30
+        Me.PictureBox3.Top = startlocationY
+        Me.PictureBox3.Left = startlocationX
+        player1finish = False                                                                                   'resetting necessary values
+        player2finish = False
+        playerYpos = startlocationY + 20
+        playerXpos = startlocationX + 20
+        Randomize()                                                                                                 'pre maze generation calculation
+        wallcoord()
+        verbreakgen()
+        horbreakgen()
+        initialisation()
+        Timer1.Start()
+        cellcount = 0
+        For a = 0 To 200                                                                                                'set arrays as equal to 0
+            wallactive(a) = 0
+        Next
+        For b = 0 To mazearea
+            beento(b) = 0
+        Next
+        For c = 0 To (mazearea + mazewidth)
+            cells(c) = 0
+        Next
+        For d = 0 To (mazearea)
+            wallbreaker(0, d) = 0
+            wallbreaker(1, d) = 0
+        Next
+        For q = 0 To 200
+            wallactive(q) = 0
+            initialmaze2(q) = 0
+            initialmaze(q) = 0
+        Next
+
+        Random = Int(Rnd() + 1)
+        initialisation()                                                                                                    'maze generation
+        pathfinder()
+        wallbreakervert()
+        wallbreakerhor()
+
+        '-------------------------------
+    End Sub
+    'go to next level, and if a player didn't complete, set their score to 0. For one player
+    Private Sub PictureBox4_Click(sender As Object, e As EventArgs) Handles PictureBox4.Click
+        If (player1finish = False) Then
+            player1score(difficulty) = 0
+        End If
+        If (player2finish = False) Then
+            player2score(difficulty) = 0
+        End If
+        activatefinish = True
+    End Sub
+    'finding options available to each cell before generation and surrounding cells numerical value
+    Private Sub initialisation()
+        Dim celltbcheck(mazearea) As Integer            'acts as boolean array, which prevents code from running multiple times
+        Dim cellttcheck(mazearea) As Integer
+        Dim celltlcheck(mazearea) As Integer
+        Dim celltrcheck(mazearea) As Integer
+        Dim n As Integer = 1
+
+        Do While (n < mazearea)
+            'surrounding cells
+            'to left
+            celltoleft(n) = n - 1
+            If (celltoleft(n) Mod mazewidth = 0) Then
+                celltoleft(n) = 0
+            Else
+                celltoleft(n) = n - 1
+            End If
+
+            'to right
+            celltoright(n) = n + 1
+            If (celltoright(n) Mod mazewidth = 1 AndAlso celltoright(n) <= 100) Then
+                celltoright(n) = 0
+            Else
+                celltoright(n) = n + 1
+            End If
+            'to top
+            celltotop(n) = n - mazewidth
+            If (celltotop(n) < 1) Then
+                celltotop(n) = 0
+            Else
+                celltotop(n) = n - mazewidth
+            End If
+            'to bottom
+            celltobottom(n) = n + mazewidth
+            If (celltobottom(n) > mazeheight * mazewidth + 1) Then
+                celltobottom(n) = 0
+            Else
+                celltobottom(n) = n + mazewidth
+            End If
+            'options
+            If (cells(celltobottom(n)) = 0 AndAlso celltobottom(n) <> 0 AndAlso celltbcheck(n) <> 1) Then
+                options(n) += 1
+                celltbcheck(n) = 1
+            End If
+            If (cells(celltotop(n)) = 0 AndAlso celltotop(n) <> 0 AndAlso cellttcheck(n) <> 1) Then
+                options(n) += 1
+                cellttcheck(n) = 1
+            End If
+            If (cells(celltoleft(n)) = 0 AndAlso celltoleft(n) <> 0 AndAlso celltlcheck(n) <> 1) Then
+                options(n) += 1
+                celltlcheck(n) = 1
+            End If
+            If (cells(celltoright(n)) = 0 AndAlso celltoright(n) <> 0 AndAlso celltrcheck(n) <> 1) Then
+                options(n) += 1
+                celltrcheck(n) = 1
+            End If
+            If (n Mod mazewidth = 0 AndAlso n <= mazewidth) Then
+                options(n) = 2
+            End If
+            If (n Mod mazewidth = 1 AndAlso n <= mazewidth) Then
+                options(n) = 2
+            End If
+            If (n Mod mazewidth = 0 AndAlso n >= (mazeheight - 1) * mazewidth) Then
+                options(n) = 2
+            End If
+            If (n Mod mazewidth = 1 AndAlso n >= (mazeheight - 1) * mazewidth) Then
+                options(n) = 2
+            End If
+            cells(101) = 1
+            options(11) = 2                                                             'unique values that cause issues
+            options(2) = 2
+
+            n += 1
+        Loop
+    End Sub
+
+    'calculates a random path based on the initialisation values
+    Private Sub pathfinder()
+        Dim randomcellidentifier As Integer         '
+        Dim currentcell As Integer = 1
+        Dim previouscell As Integer
+        Dim descisionreached As Boolean
+        Dim stuckcount As Integer = 0               'checks how long the pathfinding code has been in a dead end, in case an issue occurs and it does not automatically teleports
+        Do While (cellcount < (mazearea - 1))
+            descisionreached = False
+            If (descisionreached = False) Then
+                Dim randomcellwalls As Integer = Int(4 * Rnd() + 1)             'chooses a random number between 1 and 4, one for each wall of a cell
+                randomcellidentifier = randomcellwalls
+                If (randomcellwalls = 1) Then
+                    If (celltotop(currentcell) <> 0 AndAlso cells(celltotop(currentcell)) = 0) Then           'if cell pathfinder intends to travel to is active, valid (ie, not outside of maze), has not already been to and matches random variable
+                        cellcount += 1
+                        descisionreached = True
+                        cells(currentcell) = 1                                                                      'set current cell to inactive, visited, and 1 less option
+                        beento(currentcell) = 1
+                        options(currentcell) -= 1
+                        options(celltotop(celltotop(currentcell))) -= 1
+                        options(celltotop(celltoright(currentcell))) -= 1                                                                'reduces options available for surrounding cells pathfinder intends on going to
+                        options(celltotop(celltoleft(currentcell))) -= 1
+                        previouscell = currentcell
+                        currentcell = celltotop(currentcell)                                                            'finds previous cell, and puts current and previous into a matrix array
+                        wallbreaker(0, cellcount) = previouscell
+                        wallbreaker(1, cellcount) = currentcell
+                    Else
+                        stuckcount += 1                                                                                 'if not successfully moved, stuckcount increases, and if exceeds an amount, teleports automatically
+                    End If
+                End If
+                If (randomcellwalls = 2) Then
+                    If (celltoright(currentcell) <> 0 AndAlso cells(celltoright(currentcell)) = 0 AndAlso celltoright(currentcell) < 101) Then
+                        cellcount += 1
+                        descisionreached = True
+                        cells(currentcell) = 1
+                        beento(currentcell) = 1
+                        options(currentcell) -= 1
+                        options(celltoright(celltotop(currentcell))) -= 1
+                        options(celltoright(celltoright(currentcell))) -= 1
+                        If (celltobottom(currentcell) < 101) Then
+                            options(celltoright(celltobottom(currentcell))) -= 1                                                                        'same as above
+                        End If
+                        previouscell = currentcell
+                        currentcell = celltoright(currentcell)
+                        wallbreaker(0, cellcount) = previouscell
+                        wallbreaker(1, cellcount) = currentcell
+                    Else
+                        stuckcount += 1
+                    End If
+                End If
+                If (randomcellwalls = 3) Then
+                    If (celltobottom(currentcell) <> 0 AndAlso cells(celltobottom(currentcell)) = 0 AndAlso celltoright(currentcell) < 101) Then
+                        cellcount += 1
+                        descisionreached = True
+                        cells(currentcell) = 1
+                        beento(currentcell) = 1
+                        options(currentcell) -= 1
+                        options(celltobottom(celltoright(currentcell))) -= 1
+                        options(celltobottom(celltobottom(currentcell))) -= 1
+                        options(celltobottom(celltoleft(currentcell))) -= 1                                                                             'same as above
+                        previouscell = currentcell
+                        currentcell = celltobottom(currentcell)
+                        wallbreaker(0, cellcount) = previouscell
+                        wallbreaker(1, cellcount) = currentcell
+                    Else
+                        stuckcount += 1
+                    End If
+                End If
+                If (randomcellwalls = 4) Then
+                    If (celltoleft(currentcell) <> 0 AndAlso cells(celltoleft(currentcell)) = 0) Then
+                        cellcount += 1
+                        descisionreached = True
+                        cells(currentcell) = 1
+                        beento(currentcell) = 1
+                        options(currentcell) -= 1
+                        options(celltoleft(celltotop(currentcell))) -= 1
+                        options(celltoleft(celltobottom(currentcell))) -= 1                                                                 'same as above
+                        options(celltoleft(celltoleft(currentcell))) -= 1
+                        previouscell = currentcell
+                        currentcell = celltoleft(currentcell)
+                        wallbreaker(0, cellcount) = previouscell
+                        wallbreaker(1, cellcount) = currentcell
+                    Else
+                        stuckcount += 1
+                    End If
+                End If
+            End If
+            beento(0) = 1
+            If (options(currentcell) <= 0 Or stuckcount > 40) Then                         'if a cell has exceeded a stuckcount or has ran out of options, currentcell is turned inactive, and chooses a random cell to teleport to
+                cells(currentcell) = 1
+                Dim descisionreached2 As Boolean = False
+                Dim previousteleport As Integer = currentcell
+                randomcellarea = Int(mazearea * Rnd() + 1)
+                For m = 0 To mazearea
+                    If (descisionreached2 = False AndAlso m <= mazearea) Then
+                        If (randomcellarea = m) Then
+                            If (cells(m) = 1) Then                                                                  'random cell has to have been visited, and is not inactive
+                                If (beento(m) = 1) Then
+                                    currentcell = m
+                                    descisionreached2 = True
+                                    stuckcount = 0
+                                End If
+                            End If
+                        End If
+                        m += 1
+                    End If
+                Next
+
+            End If
+        Loop
+        verbreakgen()
+        horbreakgen()
+    End Sub
+    'numerical linking to maze interface for vertical facing walls
+    Sub verbreakgen()
+        Dim q As Integer    'cellcount
+        Dim r As Integer    'previous = 0, current = 1                                         'celculates across rows then down collumns, therefore 2 loops
+        For q = 0 To mazearea
+            For r = 0 To 100
+                If (wallbreaker(0, q) = r AndAlso wallbreaker(1, q) = r + 1 Or wallbreaker(1, q) = r AndAlso wallbreaker(0, q) = r + 1) Then                                'check if (current, previous) or (previous, current) matches cells next to each other in code, and if so, set the seperating wall to inactive
+                    wallactive(r + 100) = 1
+                    wallactive(199) = 0
+                    initialmaze2(r + 100) = wallactive(r + 100)                                                 'initial mazes come straight from source, so no issues when trying to use later
+                End If
+            Next
+        Next
+    End Sub
+    'numerical linking to maze interface for horizontal facing walls
+    Sub horbreakgen()
+        Dim o As Integer    'cellcount
+        Dim p As Integer    'previous & current
+        For o = 0 To mazearea                                                                                                                       'same as previous
+            For p = 0 To mazearea
+                If (wallbreaker(0, o) = p AndAlso wallbreaker(1, o) = p + mazewidth Or wallbreaker(1, o) = p AndAlso wallbreaker(0, o) = p + mazewidth) Then
+                    wallactive(p) = 1
+                    initialmaze2(p) = wallactive(p)
+                End If
+            Next
+        Next
+    End Sub
+    'for vertical walls, if any given spot in the array is inactive (1) then the corresponding label is turned invisible
+    Private Sub wallbreakervert()
+        If (wallactive(101) = 1) Then
+            Label101.Visible = False
+        Else
+            Label101.Visible = True
+        End If
+        If (wallactive(102) = 1) Then
+            Label102.Visible = False
+        Else
+            Label102.Visible = True
+        End If
+        If (wallactive(103) = 1) Then
+            Label103.Visible = False
+        Else
+            Label103.Visible = True
+        End If
+        If (wallactive(104) = 1) Then
+            Label104.Visible = False
+        Else
+            Label104.Visible = True
+        End If
+        If (wallactive(105) = 1) Then
+            Label105.Visible = False
+        Else
+            Label105.Visible = True
+        End If
+        If (wallactive(106) = 1) Then
+            Label106.Visible = False
+        Else
+            Label106.Visible = True
+        End If
+        If (wallactive(107) = 1) Then
+            Label107.Visible = False
+        Else
+            Label107.Visible = True
+        End If
+        If (wallactive(108) = 1) Then
+            Label108.Visible = False
+        Else
+            Label108.Visible = True
+        End If
+        If (wallactive(109) = 1) Then
+            Label109.Visible = False
+        Else
+            Label109.Visible = True
+        End If
+        If (wallactive(111) = 1) Then
+            Label111.Visible = False
+        Else
+            Label111.Visible = True
+        End If
+        If (wallactive(112) = 1) Then
+            Label112.Visible = False
+        Else
+            Label112.Visible = True
+        End If
+        If (wallactive(113) = 1) Then
+            Label113.Visible = False
+        Else
+            Label113.Visible = True
+        End If
+        If (wallactive(114) = 1) Then
+            Label114.Visible = False
+        Else
+            Label114.Visible = True
+        End If
+        If (wallactive(115) = 1) Then
+            Label115.Visible = False
+        Else
+            Label115.Visible = True
+        End If
+        If (wallactive(116) = 1) Then
+            Label116.Visible = False
+        Else
+            Label116.Visible = True
+        End If
+        If (wallactive(117) = 1) Then
+            Label117.Visible = False
+        Else
+            Label117.Visible = True
+        End If
+        If (wallactive(118) = 1) Then
+            Label118.Visible = False
+        Else
+            Label118.Visible = True
+        End If
+        If (wallactive(119) = 1) Then
+            Label119.Visible = False
+        Else
+            Label119.Visible = True
+        End If
+        If (wallactive(121) = 1) Then
+            Label121.Visible = False
+        Else
+            Label121.Visible = True
+        End If
+        If (wallactive(122) = 1) Then
+            Label122.Visible = False
+        Else
+            Label122.Visible = True
+        End If
+        If (wallactive(123) = 1) Then
+            Label123.Visible = False
+        Else
+            Label123.Visible = True
+        End If
+        If (wallactive(124) = 1) Then
+            Label124.Visible = False
+        Else
+            Label124.Visible = True
+        End If
+        If (wallactive(125) = 1) Then
+            Label125.Visible = False
+        Else
+            Label125.Visible = True
+        End If
+        If (wallactive(126) = 1) Then
+            Label126.Visible = False
+        Else
+            Label126.Visible = True
+        End If
+        If (wallactive(127) = 1) Then
+            Label127.Visible = False
+        Else
+            Label127.Visible = True
+        End If
+        If (wallactive(128) = 1) Then
+            Label128.Visible = False
+        Else
+            Label128.Visible = True
+        End If
+        If (wallactive(129) = 1) Then
+            Label129.Visible = False
+        Else
+            Label129.Visible = True
+        End If
+        If (wallactive(131) = 1) Then
+            Label131.Visible = False
+        Else
+            Label131.Visible = True
+        End If
+        If (wallactive(132) = 1) Then
+            Label132.Visible = False
+        Else
+            Label132.Visible = True
+        End If
+        If (wallactive(133) = 1) Then
+            Label133.Visible = False
+        Else
+            Label133.Visible = True
+        End If
+        If (wallactive(134) = 1) Then
+            Label134.Visible = False
+        Else
+            Label134.Visible = True
+        End If
+        If (wallactive(135) = 1) Then
+            Label135.Visible = False
+        Else
+            Label135.Visible = True
+        End If
+        If (wallactive(136) = 1) Then
+            Label136.Visible = False
+        Else
+            Label136.Visible = True
+        End If
+        If (wallactive(137) = 1) Then
+            Label137.Visible = False
+        Else
+            Label137.Visible = True
+        End If
+        If (wallactive(138) = 1) Then
+            Label138.Visible = False
+        Else
+            Label138.Visible = True
+        End If
+        If (wallactive(139) = 1) Then
+            Label139.Visible = False
+        Else
+            Label139.Visible = True
+        End If
+        If (wallactive(141) = 1) Then
+            Label141.Visible = False
+        Else
+            Label141.Visible = True
+        End If
+        If (wallactive(142) = 1) Then
+            Label142.Visible = False
+        Else
+            Label142.Visible = True
+        End If
+        If (wallactive(143) = 1) Then
+            Label143.Visible = False
+        Else
+            Label143.Visible = True
+        End If
+        If (wallactive(144) = 1) Then
+            Label144.Visible = False
+        Else
+            Label144.Visible = True
+        End If
+        If (wallactive(145) = 1) Then
+            Label145.Visible = False
+        Else
+            Label145.Visible = True
+        End If
+        If (wallactive(146) = 1) Then
+            Label146.Visible = False
+        Else
+            Label146.Visible = True
+        End If
+        If (wallactive(147) = 1) Then
+            Label147.Visible = False
+        Else
+            Label147.Visible = True
+        End If
+        If (wallactive(148) = 1) Then
+            Label148.Visible = False
+        Else
+            Label148.Visible = True
+        End If
+        If (wallactive(149) = 1) Then
+            Label149.Visible = False
+        Else
+            Label149.Visible = True
+        End If
+        If (wallactive(151) = 1) Then
+            Label151.Visible = False
+        Else
+            Label151.Visible = True
+        End If
+        If (wallactive(152) = 1) Then
+            Label152.Visible = False
+        Else
+            Label152.Visible = True
+        End If
+        If (wallactive(153) = 1) Then
+            Label153.Visible = False
+        Else
+            Label153.Visible = True
+        End If
+        If (wallactive(154) = 1) Then
+            Label154.Visible = False
+        Else
+            Label154.Visible = True
+        End If
+        If (wallactive(155) = 1) Then
+            Label155.Visible = False
+        Else
+            Label155.Visible = True
+        End If
+        If (wallactive(156) = 1) Then
+            Label156.Visible = False
+        Else
+            Label156.Visible = True
+        End If
+        If (wallactive(157) = 1) Then
+            Label157.Visible = False
+        Else
+            Label157.Visible = True
+        End If
+        If (wallactive(158) = 1) Then
+            Label158.Visible = False
+        Else
+            Label158.Visible = True
+        End If
+        If (wallactive(159) = 1) Then
+            Label159.Visible = False
+        Else
+            Label159.Visible = True
+        End If
+        If (wallactive(161) = 1) Then
+            Label161.Visible = False
+        Else
+            Label161.Visible = True
+        End If
+        If (wallactive(162) = 1) Then
+            Label162.Visible = False
+        Else
+            Label162.Visible = True
+        End If
+        If (wallactive(163) = 1) Then
+            Label163.Visible = False
+        Else
+            Label163.Visible = True
+        End If
+        If (wallactive(164) = 1) Then
+            Label164.Visible = False
+        Else
+            Label164.Visible = True
+        End If
+        If (wallactive(165) = 1) Then
+            Label165.Visible = False
+        Else
+            Label165.Visible = True
+        End If
+        If (wallactive(166) = 1) Then
+            Label166.Visible = False
+        Else
+            Label166.Visible = True
+        End If
+        If (wallactive(167) = 1) Then
+            Label167.Visible = False
+        Else
+            Label167.Visible = True
+        End If
+        If (wallactive(168) = 1) Then
+            Label168.Visible = False
+        Else
+            Label168.Visible = True
+        End If
+        If (wallactive(169) = 1) Then
+            Label169.Visible = False
+        Else
+            Label169.Visible = True
+        End If
+        If (wallactive(171) = 1) Then
+            Label171.Visible = False
+        Else
+            Label171.Visible = True
+        End If
+        If (wallactive(172) = 1) Then
+            Label172.Visible = False
+        Else
+            Label172.Visible = True
+        End If
+        If (wallactive(173) = 1) Then
+            Label173.Visible = False
+        Else
+            Label173.Visible = True
+        End If
+        If (wallactive(174) = 1) Then
+            Label174.Visible = False
+        Else
+            Label174.Visible = True
+        End If
+        If (wallactive(175) = 1) Then
+            Label175.Visible = False
+        Else
+            Label175.Visible = True
+        End If
+        If (wallactive(176) = 1) Then
+            Label176.Visible = False
+        Else
+            Label176.Visible = True
+        End If
+        If (wallactive(177) = 1) Then
+            Label177.Visible = False
+        Else
+            Label177.Visible = True
+        End If
+        If (wallactive(178) = 1) Then
+            Label178.Visible = False
+        Else
+            Label178.Visible = True
+        End If
+        If (wallactive(179) = 1) Then
+            Label179.Visible = False
+        Else
+            Label179.Visible = True
+        End If
+        If (wallactive(181) = 1) Then
+            Label181.Visible = False
+        Else
+            Label181.Visible = True
+        End If
+        If (wallactive(182) = 1) Then
+            Label182.Visible = False
+        Else
+            Label182.Visible = True
+        End If
+        If (wallactive(183) = 1) Then
+            Label183.Visible = False
+        Else
+            Label183.Visible = True
+        End If
+        If (wallactive(184) = 1) Then
+            Label184.Visible = False
+        Else
+            Label184.Visible = True
+        End If
+        If (wallactive(185) = 1) Then
+            Label185.Visible = False
+        Else
+            Label185.Visible = True
+        End If
+        If (wallactive(186) = 1) Then
+            Label186.Visible = False
+        Else
+            Label186.Visible = True
+        End If
+        If (wallactive(187) = 1) Then
+            Label187.Visible = False
+        Else
+            Label187.Visible = True
+        End If
+        If (wallactive(188) = 1) Then
+            Label188.Visible = False
+        Else
+            Label188.Visible = True
+        End If
+        If (wallactive(189) = 1) Then
+            Label189.Visible = False
+        Else
+            Label189.Visible = True
+        End If
+        If (wallactive(191) = 1) Then
+            Label191.Visible = False
+        Else
+            Label191.Visible = True
+        End If
+        If (wallactive(192) = 1) Then
+            Label192.Visible = False
+        Else
+            Label192.Visible = True
+        End If
+        If (wallactive(193) = 1) Then
+            Label193.Visible = False
+        Else
+            Label193.Visible = True
+        End If
+        If (wallactive(194) = 1) Then
+            Label194.Visible = False
+        Else
+            Label194.Visible = True
+        End If
+        If (wallactive(195) = 1) Then
+            Label195.Visible = False
+        Else
+            Label195.Visible = True
+        End If
+        If (wallactive(196) = 1) Then
+            Label196.Visible = False
+        Else
+            Label196.Visible = True
+        End If
+        If (wallactive(197) = 1) Then
+            Label197.Visible = False
+        Else
+            Label197.Visible = True
+        End If
+        If (wallactive(198) = 1) Then
+            Label198.Visible = False
+        Else
+            Label198.Visible = True
+        End If
+        If (wallactive(199) = 1) Then
+            Label199.Visible = False
+        Else
+            Label199.Visible = False
+        End If
+    End Sub
+    'same concept as previous, but for horizontal walls
+    Private Sub wallbreakerhor()
+        If (wallactive(1) = 1) Then
+            Label1.Visible = False
+        Else
+            Label1.Visible = True
+        End If
+        If (wallactive(2) = 1) Then
+            Label2.Visible = False
+        Else
+            Label2.Visible = True
+        End If
+        If (wallactive(3) = 1) Then
+            Label3.Visible = False
+        Else
+            Label3.Visible = True
+        End If
+        If (wallactive(4) = 1) Then
+            Label4.Visible = False
+        Else
+            Label4.Visible = True
+        End If
+        If (wallactive(5) = 1) Then
+            Label5.Visible = False
+        Else
+            Label5.Visible = True
+        End If
+        If (wallactive(6) = 1) Then
+            Label6.Visible = False
+        Else
+            Label6.Visible = True
+        End If
+        If (wallactive(7) = 1) Then
+            Label7.Visible = False
+        Else
+            Label7.Visible = True
+        End If
+        If (wallactive(8) = 1) Then
+            Label8.Visible = False
+        Else
+            Label8.Visible = True
+        End If
+        If (wallactive(9) = 1) Then
+            Label9.Visible = False
+        Else
+            Label9.Visible = True
+        End If
+        If (wallactive(10) = 1) Then
+            Label10.Visible = False
+        Else
+            Label10.Visible = True
+        End If
+        If (wallactive(11) = 1) Then
+            Label11.Visible = False
+        Else
+            Label11.Visible = True
+        End If
+        If (wallactive(12) = 1) Then
+            Label12.Visible = False
+        Else
+            Label12.Visible = True
+        End If
+        If (wallactive(13) = 1) Then
+            Label13.Visible = False
+        Else
+            Label13.Visible = True
+        End If
+        If (wallactive(14) = 1) Then
+            Label14.Visible = False
+        Else
+            Label14.Visible = True
+        End If
+        If (wallactive(15) = 1) Then
+            Label15.Visible = False
+        Else
+            Label15.Visible = True
+        End If
+        If (wallactive(16) = 1) Then
+            Label16.Visible = False
+        Else
+            Label16.Visible = True
+        End If
+        If (wallactive(17) = 1) Then
+            Label17.Visible = False
+        Else
+            Label17.Visible = True
+        End If
+        If (wallactive(18) = 1) Then
+            Label18.Visible = False
+        Else
+            Label18.Visible = True
+        End If
+        If (wallactive(19) = 1) Then
+            Label19.Visible = False
+        Else
+            Label19.Visible = True
+        End If
+        If (wallactive(20) = 1) Then
+            Label20.Visible = False
+        Else
+            Label20.Visible = True
+        End If
+        If (wallactive(21) = 1) Then
+            Label21.Visible = False
+        Else
+            Label21.Visible = True
+        End If
+        If (wallactive(22) = 1) Then
+            Label22.Visible = False
+        Else
+            Label22.Visible = True
+        End If
+        If (wallactive(23) = 1) Then
+            Label23.Visible = False
+        Else
+            Label23.Visible = True
+        End If
+        If (wallactive(24) = 1) Then
+            Label24.Visible = False
+        Else
+            Label24.Visible = True
+        End If
+        If (wallactive(25) = 1) Then
+            Label25.Visible = False
+        Else
+            Label25.Visible = True
+        End If
+        If (wallactive(26) = 1) Then
+            Label26.Visible = False
+        Else
+            Label26.Visible = True
+        End If
+        If (wallactive(27) = 1) Then
+            Label27.Visible = False
+        Else
+            Label27.Visible = True
+        End If
+        If (wallactive(28) = 1) Then
+            Label28.Visible = False
+        Else
+            Label28.Visible = True
+        End If
+        If (wallactive(29) = 1) Then
+            Label29.Visible = False
+        Else
+            Label29.Visible = True
+        End If
+        If (wallactive(30) = 1) Then
+            Label30.Visible = False
+        Else
+            Label30.Visible = True
+        End If
+        If (wallactive(31) = 1) Then
+            Label31.Visible = False
+        Else
+            Label31.Visible = True
+        End If
+        If (wallactive(32) = 1) Then
+            Label32.Visible = False
+        Else
+            Label32.Visible = True
+        End If
+        If (wallactive(33) = 1) Then
+            Label33.Visible = False
+        Else
+            Label33.Visible = True
+        End If
+        If (wallactive(34) = 1) Then
+            Label34.Visible = False
+        Else
+            Label34.Visible = True
+        End If
+        If (wallactive(35) = 1) Then
+            Label35.Visible = False
+        Else
+            Label35.Visible = True
+        End If
+        If (wallactive(36) = 1) Then
+            Label36.Visible = False
+        Else
+            Label36.Visible = True
+        End If
+        If (wallactive(37) = 1) Then
+            Label37.Visible = False
+        Else
+            Label37.Visible = True
+        End If
+        If (wallactive(38) = 1) Then
+            Label38.Visible = False
+        Else
+            Label38.Visible = True
+        End If
+        If (wallactive(39) = 1) Then
+            Label39.Visible = False
+        Else
+            Label39.Visible = True
+        End If
+        If (wallactive(40) = 1) Then
+            Label40.Visible = False
+        Else
+            Label40.Visible = True
+        End If
+        If (wallactive(41) = 1) Then
+            Label41.Visible = False
+        Else
+            Label41.Visible = True
+        End If
+        If (wallactive(42) = 1) Then
+            Label42.Visible = False
+        Else
+            Label42.Visible = True
+        End If
+        If (wallactive(43) = 1) Then
+            Label43.Visible = False
+        Else
+            Label43.Visible = True
+        End If
+        If (wallactive(44) = 1) Then
+            Label44.Visible = False
+        Else
+            Label44.Visible = True
+        End If
+        If (wallactive(45) = 1) Then
+            Label45.Visible = False
+        Else
+            Label45.Visible = True
+        End If
+        If (wallactive(46) = 1) Then
+            Label46.Visible = False
+        Else
+            Label46.Visible = True
+        End If
+        If (wallactive(47) = 1) Then
+            Label47.Visible = False
+        Else
+            Label47.Visible = True
+        End If
+        If (wallactive(48) = 1) Then
+            Label48.Visible = False
+        Else
+            Label48.Visible = True
+        End If
+        If (wallactive(49) = 1) Then
+            Label49.Visible = False
+        Else
+            Label49.Visible = True
+        End If
+        If (wallactive(50) = 1) Then
+            Label50.Visible = False
+        Else
+            Label50.Visible = True
+        End If
+        If (wallactive(51) = 1) Then
+            Label51.Visible = False
+        Else
+            Label51.Visible = True
+        End If
+        If (wallactive(52) = 1) Then
+            Label52.Visible = False
+        Else
+            Label52.Visible = True
+        End If
+        If (wallactive(53) = 1) Then
+            Label53.Visible = False
+        Else
+            Label53.Visible = True
+        End If
+        If (wallactive(54) = 1) Then
+            Label54.Visible = False
+        Else
+            Label54.Visible = True
+        End If
+        If (wallactive(55) = 1) Then
+            Label55.Visible = False
+        Else
+            Label55.Visible = True
+        End If
+        If (wallactive(56) = 1) Then
+            Label56.Visible = False
+        Else
+            Label56.Visible = True
+        End If
+        If (wallactive(57) = 1) Then
+            Label57.Visible = False
+        Else
+            Label57.Visible = True
+        End If
+        If (wallactive(58) = 1) Then
+            Label58.Visible = False
+        Else
+            Label58.Visible = True
+        End If
+        If (wallactive(59) = 1) Then
+            Label59.Visible = False
+        Else
+            Label59.Visible = True
+        End If
+        If (wallactive(60) = 1) Then
+            Label60.Visible = False
+        Else
+            Label60.Visible = True
+        End If
+        If (wallactive(61) = 1) Then
+            Label61.Visible = False
+        Else
+            Label61.Visible = True
+        End If
+        If (wallactive(62) = 1) Then
+            Label62.Visible = False
+        Else
+            Label62.Visible = True
+        End If
+        If (wallactive(63) = 1) Then
+            Label63.Visible = False
+        Else
+            Label63.Visible = True
+        End If
+        If (wallactive(64) = 1) Then
+            Label64.Visible = False
+        Else
+            Label64.Visible = True
+        End If
+        If (wallactive(65) = 1) Then
+            Label65.Visible = False
+        Else
+            Label65.Visible = True
+        End If
+        If (wallactive(66) = 1) Then
+            Label66.Visible = False
+        Else
+            Label66.Visible = True
+        End If
+        If (wallactive(67) = 1) Then
+            Label67.Visible = False
+        Else
+            Label67.Visible = True
+        End If
+        If (wallactive(68) = 1) Then
+            Label68.Visible = False
+        Else
+            Label68.Visible = True
+        End If
+        If (wallactive(69) = 1) Then
+            Label69.Visible = False
+        Else
+            Label69.Visible = True
+        End If
+        If (wallactive(70) = 1) Then
+            Label70.Visible = False
+        Else
+            Label70.Visible = True
+        End If
+        If (wallactive(71) = 1) Then
+            Label71.Visible = False
+        Else
+            Label71.Visible = True
+        End If
+        If (wallactive(72) = 1) Then
+            Label72.Visible = False
+        Else
+            Label72.Visible = True
+        End If
+        If (wallactive(73) = 1) Then
+            Label73.Visible = False
+        Else
+            Label73.Visible = True
+        End If
+        If (wallactive(74) = 1) Then
+            Label74.Visible = False
+        Else
+            Label74.Visible = True
+        End If
+        If (wallactive(75) = 1) Then
+            Label75.Visible = False
+        Else
+            Label75.Visible = True
+        End If
+        If (wallactive(76) = 1) Then
+            Label76.Visible = False
+        Else
+            Label76.Visible = True
+        End If
+        If (wallactive(77) = 1) Then
+            Label77.Visible = False
+        Else
+            Label77.Visible = True
+        End If
+        If (wallactive(78) = 1) Then
+            Label78.Visible = False
+        Else
+            Label78.Visible = True
+        End If
+        If (wallactive(79) = 1) Then
+            Label79.Visible = False
+        Else
+            Label79.Visible = True
+        End If
+        If (wallactive(80) = 1) Then
+            Label80.Visible = False
+        Else
+            Label80.Visible = True
+        End If
+        If (wallactive(81) = 1) Then
+            Label81.Visible = False
+        Else
+            Label81.Visible = True
+        End If
+        If (wallactive(82) = 1) Then
+            Label82.Visible = False
+        Else
+            Label82.Visible = True
+        End If
+        If (wallactive(83) = 1) Then
+            Label83.Visible = False
+        Else
+            Label83.Visible = True
+        End If
+        If (wallactive(84) = 1) Then
+            Label84.Visible = False
+        Else
+            Label84.Visible = True
+        End If
+        If (wallactive(85) = 1) Then
+            Label85.Visible = False
+        Else
+            Label85.Visible = True
+        End If
+        If (wallactive(86) = 1) Then
+            Label86.Visible = False
+        Else
+            Label86.Visible = True
+        End If
+        If (wallactive(87) = 1) Then
+            Label87.Visible = False
+        Else
+            Label87.Visible = True
+        End If
+        If (wallactive(88) = 1) Then
+            Label88.Visible = False
+        Else
+            Label88.Visible = True
+        End If
+        If (wallactive(89) = 1) Then
+            Label89.Visible = False
+        Else
+            Label89.Visible = True
+        End If
+    End Sub
+End Class
